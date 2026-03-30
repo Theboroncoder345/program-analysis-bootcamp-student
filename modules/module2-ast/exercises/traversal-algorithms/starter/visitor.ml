@@ -16,10 +16,74 @@ open Shared_ast.Ast_types
         or thread an accumulator through the recursion.
       - Don't forget to count the node itself AND recurse into its
         children. *)
-let count_nodes (_stmts : stmt list) : (string * int) list =
-  (* TODO: walk the AST and count occurrences of each constructor *)
-  failwith "TODO"
+let count_nodes (stmts : stmt list) : (string * int) list =
+  let tbl = Hashtbl.create 32 in
 
+  let bump key =
+    Hashtbl.replace tbl key
+      (1 + (if Hashtbl.mem tbl key then Hashtbl.find tbl key else 0))
+  in
+
+  let rec visit_expr e =
+    match e with
+    | IntLit _ ->
+        bump "IntLit"
+
+    | BoolLit _ ->
+        bump "BoolLit"
+
+    | Var _ ->
+        bump "Var"
+
+    | BinOp (_, e1, e2) ->
+        bump "BinOp";
+        visit_expr e1;
+        visit_expr e2
+
+    | UnaryOp (_, e1) ->
+        bump "UnaryOp";
+        visit_expr e1
+
+    | Call (_, args) ->
+        bump "Call";
+        List.iter visit_expr args
+  in
+
+  let rec visit_stmt s =
+    match s with
+    | Assign (_, e) ->
+        bump "Assign";
+        visit_expr e
+
+    | If (cond, t, f) ->
+        bump "If";
+        visit_expr cond;
+        List.iter visit_stmt t;
+        List.iter visit_stmt f
+
+    | While (cond, body) ->
+        bump "While";
+        visit_expr cond;
+        List.iter visit_stmt body
+
+    | Return opt ->
+        bump "Return";
+        (match opt with
+         | Some e -> visit_expr e
+         | None -> ())
+
+    | Print exprs ->
+        bump "Print";
+        List.iter visit_expr exprs
+
+    | Block stmts ->
+        bump "Block";
+        List.iter visit_stmt stmts
+  in
+
+  List.iter visit_stmt stmts;
+
+  Hashtbl.fold (fun k v acc -> (k, v) :: acc) tbl []
 (** Evaluate a constant expression, returning Some int if the
     expression contains only integer literals and arithmetic operators,
     or None if it contains variables, booleans, calls, or comparison
@@ -35,6 +99,29 @@ let count_nodes (_stmts : stmt list) : (string * int) list =
       evaluate (BoolLit true)                      => None
 
     Hint: use Option.bind or match on recursive results. *)
-let evaluate (_e : expr) : int option =
-  (* TODO: evaluate constant integer expressions *)
-  failwith "TODO"
+let evaluate (e : expr) : int option =
+  match e with
+  | IntLit n -> Some n
+
+  | BoolLit _ -> None
+  | Var _ -> None
+
+  | BinOp (op, e1, e2) ->
+      (match evaluate e1, evaluate e2 with
+       | Some v1, Some v2 ->
+           (match op with
+            | Add -> Some (v1 + v2)
+            | Sub -> Some (v1 - v2)
+            | Mul -> Some (v1 * v2)
+            | Div ->
+                if v2 = 0 then None else Some (v1 / v2)
+            | _ -> None)
+       | _ -> None)
+
+  | UnaryOp (_, e1) ->
+      (match evaluate e1 with
+       | Some v -> Some (-v)
+       | None -> None)
+
+  | Call _ ->
+      None
